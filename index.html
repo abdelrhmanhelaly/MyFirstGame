@@ -2,123 +2,202 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>لعبة تدمير الكتل</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>لعبة صائد الكرات المطورة</title>
   <style>
+    * { box-sizing: border-box; touch-action: none; }
     body {
       margin: 0;
-      background: #111827;
+      padding: 10px;
+      background: #0f172a;
       color: #fff;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      font-family: sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
+      user-select: none;
+    }
+    .hud {
+      display: flex;
+      gap: 20px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      margin-bottom: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 8px 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     canvas {
-      background: #1f2937;
-      border: 3px solid #3b82f6;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    }
-    .score-board {
-      margin-bottom: 12px;
-      font-size: 1.2rem;
-      font-weight: bold;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+      max-width: 100%;
+      height: auto;
     }
   </style>
 </head>
 <body>
 
-  <div class="score-board">النقاط: <span id="score">0</span></div>
-  <canvas id="gameCanvas" width="480" height="320"></canvas>
+  <div class="hud">
+    <div>النقاط: <span id="scoreVal">0</span></div>
+    <div>المستوى: <span id="levelVal">1</span>/3</div>
+  </div>
+
+  <canvas id="gameCanvas" width="480" height="400"></canvas>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-    const scoreDisplay = document.getElementById("score");
+    const scoreVal = document.getElementById("scoreVal");
+    const levelVal = document.getElementById("levelVal");
 
     let score = 0;
-    let ballRadius = 7;
-    let x = canvas.width / 2;
-    let y = canvas.height - 30;
-    let dx = 3;
-    let dy = -3;
+    let currentLevel = 1;
+    let ballRadius = 8;
+    let x, y, dx, dy;
+    let paddleHeight = 12;
+    let paddleWidth = 85;
+    let paddleX;
 
-    let paddleHeight = 10;
-    let paddleWidth = 75;
-    let paddleX = (canvas.width - paddleWidth) / 2;
+    const brickWidth = 50;
+    const brickHeight = 16;
+    const brickPadding = 8;
+    const brickOffsetTop = 40;
+    const brickOffsetLeft = 14;
 
-    const brickRowCount = 3;
-    const brickColumnCount = 6;
-    const brickWidth = 65;
-    const brickHeight = 15;
-    const brickPadding = 10;
-    const brickOffsetTop = 30;
-    const brickOffsetLeft = 20;
+    const levels = [
+      {
+        rows: 3,
+        speed: 3.5,
+        bg: ["#0f172a", "#1e1b4b"],
+        brickColor: "#38bdf8"
+      },
+      {
+        rows: 4,
+        speed: 4.8,
+        bg: ["#14532d", "#064e3b"],
+        brickColor: "#4ade80"
+      },
+      {
+        rows: 5,
+        speed: 6.2,
+        bg: ["#4c0519", "#881337"],
+        brickColor: "#fb7185"
+      }
+    ];
 
     let bricks = [];
-    for (let c = 0; c < brickColumnCount; c++) {
-      bricks[c] = [];
-      for (let r = 0; r < brickRowCount; r++) {
-        bricks[c][r] = { x: 0, y: 0, status: 1 };
+
+    function initLevel(lvl) {
+      const cfg = levels[lvl - 1];
+      levelVal.innerText = lvl;
+      x = canvas.width / 2;
+      y = canvas.height - 35;
+      dx = (Math.random() > 0.5 ? 1 : -1) * cfg.speed;
+      dy = -cfg.speed;
+      paddleX = (canvas.width - paddleWidth) / 2;
+
+      bricks = [];
+      const cols = 8;
+      for (let c = 0; c < cols; c++) {
+        bricks[c] = [];
+        for (let r = 0; r < cfg.rows; r++) {
+          bricks[c][r] = { x: 0, y: 0, status: 1 };
+        }
       }
     }
 
+    // حركة الماوس
     document.addEventListener("mousemove", (e) => {
-      const relativeX = e.clientX - canvas.offsetLeft;
+      const rect = canvas.getBoundingClientRect();
+      const relativeX = (e.clientX - rect.left) * (canvas.width / rect.width);
       if (relativeX > 0 && relativeX < canvas.width) {
         paddleX = relativeX - paddleWidth / 2;
       }
     });
 
+    // حركة اللمس للموبايل
+    canvas.addEventListener("touchmove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const touchX = (e.touches[0].clientX - rect.left) * (canvas.width / rect.width);
+      paddleX = touchX - paddleWidth / 2;
+      e.preventDefault();
+    }, { passive: false });
+
     function collisionDetection() {
-      for (let c = 0; c < brickColumnCount; c++) {
-        for (let r = 0; r < brickRowCount; r++) {
+      const cfg = levels[currentLevel - 1];
+      let remainingBricks = 0;
+
+      for (let c = 0; c < bricks.length; c++) {
+        for (let r = 0; r < cfg.rows; r++) {
           let b = bricks[c][r];
           if (b.status === 1) {
+            remainingBricks++;
             if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
               dy = -dy;
               b.status = 0;
-              score += 10;
-              scoreDisplay.innerText = score;
-              if (score === brickRowCount * brickColumnCount * 10) {
-                alert("مبروك! لقد فزت!");
-                document.location.reload();
-              }
+              score += 15;
+              scoreVal.innerText = score;
             }
           }
         }
       }
+
+      if (remainingBricks === 0) {
+        if (currentLevel < levels.length) {
+          alert(`رائع! أكملت المستوى ${currentLevel}. استعد للمستوى التالي!`);
+          currentLevel++;
+          initLevel(currentLevel);
+        } else {
+          alert(`مبروك! ختمت اللعبة بالكامل! مجموع نقاطك: ${score}`);
+          document.location.reload();
+        }
+      }
+    }
+
+    function drawBackground() {
+      const cfg = levels[currentLevel - 1];
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, cfg.bg[0]);
+      grad.addColorStop(1, cfg.bg[1]);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
     function drawBall() {
       ctx.beginPath();
       ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
-      ctx.fillStyle = "#38bdf8";
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "#38bdf8";
       ctx.fill();
       ctx.closePath();
+      ctx.shadowBlur = 0;
     }
 
     function drawPaddle() {
       ctx.beginPath();
-      ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
-      ctx.fillStyle = "#22c55e";
+      ctx.roundRect(paddleX, canvas.height - paddleHeight - 10, paddleWidth, paddleHeight, 6);
+      ctx.fillStyle = "#facc15";
       ctx.fill();
       ctx.closePath();
     }
 
     function drawBricks() {
-      for (let c = 0; c < brickColumnCount; c++) {
-        for (let r = 0; r < brickRowCount; r++) {
+      const cfg = levels[currentLevel - 1];
+      for (let c = 0; c < bricks.length; c++) {
+        for (let r = 0; r < cfg.rows; r++) {
           if (bricks[c][r].status === 1) {
             let brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
             let brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
             bricks[c][r].x = brickX;
             bricks[c][r].y = brickY;
             ctx.beginPath();
-            ctx.rect(brickX, brickY, brickWidth, brickHeight);
-            ctx.fillStyle = "#f43f5e";
+            ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 4);
+            ctx.fillStyle = cfg.brickColor;
             ctx.fill();
             ctx.closePath();
           }
@@ -127,7 +206,7 @@
     }
 
     function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
       drawBricks();
       drawBall();
       drawPaddle();
@@ -135,11 +214,14 @@
 
       if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) dx = -dx;
       if (y + dy < ballRadius) dy = -dy;
-      else if (y + dy > canvas.height - ballRadius) {
+      else if (y + dy > canvas.height - ballRadius - 10) {
         if (x > paddleX && x < paddleX + paddleWidth) {
           dy = -dy;
-        } else {
-          alert("انتهت اللعبة! حاول مجدداً.");
+          // انحراف الزاوية بحسب مكان لمس المضرب
+          let hitPoint = (x - (paddleX + paddleWidth / 2)) / (paddleWidth / 2);
+          dx = hitPoint * (levels[currentLevel - 1].speed + 1);
+        } else if (y + dy > canvas.height - ballRadius) {
+          alert("للأسف خسرت! حظاً أفضل في المرة القادمة.");
           document.location.reload();
           return;
         }
@@ -150,6 +232,7 @@
       requestAnimationFrame(draw);
     }
 
+    initLevel(1);
     draw();
   </script>
 </body>
